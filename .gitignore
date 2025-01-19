@@ -50,6 +50,9 @@ rsconnect/
 
 # Data
 *.tif
+*.hdr
+*.vrt
 
 # Output
 *.png
+*.xml
