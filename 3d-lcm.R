@@ -1,5 +1,4 @@
 # 1. PACKAGES
-
 libs <- c(
   "terra",
   "giscoR",
@@ -12,36 +11,22 @@ libs <- c(
   "magick"
 )
 
-installed_libraries <- libs %in% rownames(
-  installed.packages()
-)
-
-if(any(installed_libraries == F)){
-  install.packages(
-    libs[!installed_libraries]
-  )
+installed_libraries <- libs %in% rownames(installed.packages())
+if(any(installed_libraries == F)) {
+  install.packages(libs[!installed_libraries])
 }
 
-invisible(
-  lapply(
-    libs, library, character.only = T
-  )
-)
+invisible(lapply(libs, library, character.only = T))
 
 install.packages("terra")
 library("terra")
 
-# PROJ error
-
+# PROJ error fix
 plib <- Sys.getenv("PROJ_LIB")
 prj <- system.file("proj", package = "terra")[1]
 Sys.setenv("PROJ_LIB" = prj)
 
-# and perhaps set it back when done so that you can use Postgres
-# Sys.setenv("PROJ_LIB" = plib)
-
 # 2. COUNTRY BORDERS
-
 country_sf <- giscoR::gisco_get_countries(
   country = "BA",
   resolution = "1"
@@ -53,93 +38,50 @@ png("bih-borders.png")
 plot(sf::st_geometry(country_sf))
 dev.off()
 
-# 3 DOWNLOAD ESRI LAND COVER TILES
-
+# 3. DOWNLOAD ESRI LAND COVER TILES
 urls <- c(
   "https://lulctimeseries.blob.core.windows.net/lulctimeseriesv003/lc2023/33T_20230101-20240101.tif",
   "https://lulctimeseries.blob.core.windows.net/lulctimeseriesv003/lc2023/34T_20230101-20240101.tif"
 )
-
 options(timeout = 120)
 
-# for(url in urls){
-#   download.file(
-#     url = url,
-#     destfile = basename(url),
-#     mode = "wb"
-#   )
+# Uncomment this to download files
+# for(url in urls) {
+#   download.file(url = url, destfile = basename(url), mode = "wb")
 # }
 
-# 4 LOAD TILES
-
-raster_files <- list.files(
-  path = getwd(),
-  pattern = "tif",
-  full.names = T
-)
-
+# 4. LOAD TILES
+raster_files <- list.files(path = getwd(), pattern = "tif", full.names = T)
 crs <- "EPSG:4326"
 
-for(raster in raster_files){
-    rasters <- terra::rast(raster)
-    
-    country <- country_sf |>
-      sf::st_transform(
-        crs = terra::crs(
-          rasters
-        )
-      )
-    
-    land_cover <- terra::crop(
-      rasters,
-      terra::vect(
-        country
-      ),
-      snap = "in",
-      mask = T
-    ) |>
-      terra::aggregate(
-        fact = 5,
-        fun = "modal"
-      ) |>
-      terra::project(crs)
-    
-    terra::writeRaster(
-      land_cover,
-      paste0(
-        raster,
-        "_bosnia",
-        ".tif"
-      )
-    )
-  }
+for(raster in raster_files) {
+  rasters <- terra::rast(raster)
+  
+  country <- country_sf |> 
+    sf::st_transform(crs = terra::crs(rasters))
+  
+  land_cover <- terra::crop(
+    rasters,
+    terra::vect(country),
+    snap = "in",
+    mask = T
+  ) |> 
+    terra::aggregate(fact = 5, fun = "modal") |> 
+    terra::project(crs)
+  
+  terra::writeRaster(
+    land_cover,
+    paste0(raster, "_bosnia", ".tif")
+  )
+}
 
-# 5 LOAD VIRTUAL LAYER
+# 5. LOAD VIRTUAL LAYER
+r_list <- list.files(path = getwd(), pattern = "_bosnia", full.names = T)
+land_cover_vrt <- terra::vrt(r_list, "bosnia_land_cover_vrt.vrt", overwrite = T)
 
-r_list <- list.files(
-  path = getwd(),
-  pattern = "_bosnia",
-  full.names = T
-)
-
-land_cover_vrt <- terra::vrt(
-  r_list,
-  "bosnia_land_cover_vrt.vrt",
-  overwrite = T
-)
-
-# 6 FETCH ORIGINAL COLORS
-
-ras <- terra::rast(
-  raster_files[[1]]
-)
-
-raster_color_table <- do.call(
-  data.frame,
-  terra::coltab(ras)
-)
-
-head(raster_color_table)
+# 6. FETCH ORIGINAL COLORS
+ras <- terra::rast(raster_files[[1]])
+raster_color_table <- do.call(data.frame, terra::coltab(ras))
 
 hex_code <- ggtern::rgb2hex(
   r = raster_color_table[,2],
@@ -147,10 +89,8 @@ hex_code <- ggtern::rgb2hex(
   b = raster_color_table[,4]
 )
 
-# 7 ASSIGN COLORS TO RASTER
-
+# 7. ASSIGN COLORS TO RASTER
 cols <- hex_code[c(2:3, 5:6, 8:12)]
-
 from <- c(1:2, 4:5, 7:11)
 to <- t(col2rgb(cols))
 land_cover_vrt <- na.omit(land_cover_vrt)
@@ -164,93 +104,63 @@ land_cover_bosnia <- terra::subst(
 
 terra::plotRGB(land_cover_bosnia)
 
-# 8 DIGITAL ELEVATION MODEL
-
-elev <- elevatr::get_elev_raster(
-  locations = country_sf,
-  z = 9, clip = "locations"
-)
-
-crs_lambert <-
-  "+proj=laea +lat_0=52 +lon_0=10 +x_0=4321000 +y_0=3210000 +datum=WGS84 +units=m +no_frfs"
+# 8. DIGITAL ELEVATION MODEL
+elev <- elevatr::get_elev_raster(locations = country_sf, z = 9, clip = "locations")
+crs_lambert <- "+proj=laea +lat_0=52 +lon_0=10 +x_0=4321000 +y_0=3210000 +datum=WGS84 +units=m +no_frfs"
 
 land_cover_bosnia_resampled <- terra::resample(
   x = land_cover_bosnia,
   y = terra::rast(elev),
   method = "near"
-) |>
+) |> 
   terra::project(crs_lambert)
-
-terra::plotRGB(land_cover_bosnia_resampled)
-
-img_file <- "land_cover_bosnia.png"
 
 terra::writeRaster(
   land_cover_bosnia_resampled,
-  img_file,
+  "land_cover_bosnia.png",
   overwrite = T,
   NAflag = 255
 )
 
-img <- png::readPNG(img_file)
+img <- png::readPNG("land_cover_bosnia.png")
 
 # 9. RENDER SCENE
-#----------------
+elev_lambert <- elev |> terra::rast() |> terra::project(crs_lambert)
 
-elev_lambert <- elev |>
-  terra::rast() |>
-  terra::project(crs_lambert)
+# Downsample elevation for performance
+elev_downsampled <- terra::aggregate(elev_lambert, fact = 2, fun = "mean")
+elmat <- rayshader::raster_to_matrix(elev_downsampled)
 
-elmat <- rayshader::raster_to_matrix(
-  elev_lambert
-)
+# Reduced window size and texture complexity
+h <- nrow(elev_downsampled)
+w <- ncol(elev_downsampled)
 
-h <- nrow(elev_lambert)
-w <- ncol(elev_lambert)
-
-elmat |>
-  rayshader::height_shade(
-    texture = colorRampPalette(
-      cols[9]
-    )(256)
-  ) |>
-  rayshader::add_overlay(
-    img,
-    alphalayer = 1
-  ) |>
+elmat |> 
+  rayshader::height_shade(texture = colorRampPalette(cols[9])(128)) |> 
+  rayshader::add_overlay(img, alphalayer = 1) |> 
   rayshader::plot_3d(
     elmat,
-    zscale = 12,
+    zscale = 6, # Lower zscale for performance
     solid = F,
     shadow = T,
     shadow_darkness = 1,
     background = "white",
-    windowsize = c(
-      w / 5, h / 5
-    ),
+    windowsize = c(w / 10, h / 10), # Reduced window size
     zoom = .5,
     phi = 85,
     theta = 0
   )
 
-rayshader::render_camera(
-  zoom = .58
-)
+rayshader::render_camera(zoom = .58)
 
 # 10. RENDER OBJECT
-#-----------------
-
 u <- "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/4k/air_museum_playground_4k.hdr"
 hdri_file <- basename(u)
 
-# download.file(
-#   url = u,
-#   destfile = hdri_file,
-#   mode = "wb"
-# )
+# Uncomment this to download the HDRI file
+# download.file(url = u, destfile = hdri_file, mode = "wb")
 
-filename <- "3d_land_cover_bosnia-dark.png"
-
+filename <- "3d_land_cover_bosnia.png"
 rayshader::render_highquality(
   filename = filename,
   preview = T,
@@ -259,45 +169,20 @@ rayshader::render_highquality(
   intensity_env = 1,
   rotate_env = 90,
   interactive = F,
-  parallel = T,
-  width = w * 1.5,
-  height = h * 1.5
+  parallel = F, # Disabled parallel processing
+  width = w * 0.25, # Reduced render size
+  height = h * 0.25
 )
 
 # 11. PUT EVERYTHING TOGETHER
-
-c(
-  "#419bdf", "#397d49", "#7a87c6", 
-  "#e49635", "#c4281b", "#a59b8f", 
-  "#a8ebff", "#616161", "#e3e2c3"
-)
-
 legend_name <- "land_cover_legend.png"
 png(legend_name)
 par(family = "mono")
 
-plot(
-  NULL,
-  xaxt = "n",
-  yaxt = "n",
-  bty = "n",
-  ylab = "",
-  xlab = "",
-  xlim = 0:1,
-  ylim = 0:1,
-  xaxs = "i",
-  yaxs = "i"
-)
-
+plot(NULL, xaxt = "n", yaxt = "n", bty = "n", ylab = "", xlab = "", xlim = 0:1, ylim = 0:1, xaxs = "i", yaxs = "i")
 legend(
   "center",
-  legend = c(
-    "Water",
-    "Trees",
-    "Crops",
-    "Built area",
-    "Rangeland"
-  ),
+  legend = c("Water", "Trees", "Crops", "Built area", "Rangeland"),
   pch = 15,
   cex = 2,
   pt.cex = 1,
@@ -308,31 +193,20 @@ legend(
 )
 dev.off()
 
-# filename <- "land-cover-bih-3d-b.png"
-
-lc_img <- magick::image_read(
-  filename
-)
-
-my_legend <- magick::image_read(
-  legend_name
-)
+lc_img <- magick::image_read(filename)
+my_legend <- magick::image_read(legend_name)
 
 my_legend_scaled <- magick::image_scale(
-  magick::image_background(
-    my_legend, "none"
-  ), 2500
+  magick::image_background(my_legend, "none"),
+  2500
 )
 
 p <- magick::image_composite(
-  magick::image_scale(
-    lc_img, "x7000" 
-  ),
+  magick::image_scale(lc_img, "x7000"),
   my_legend_scaled,
   gravity = "southwest",
   offset = "+100+0"
 )
 
-magick::image_write(
-  p, "3d_bosnia_land_cover_final.png"
-)
+magick::image_write(p, "3d_bosnia_land_cover_final.png")
+
