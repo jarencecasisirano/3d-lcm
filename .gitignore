@@ -56,3 +56,4 @@ rsconnect/
 # Output
 *.png
 *.xml
+!3d_bosnia_land_cover_final.png
