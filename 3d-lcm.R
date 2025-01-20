@@ -140,7 +140,7 @@ elmat |>
   rayshader::add_overlay(img, alphalayer = 1) |> 
   rayshader::plot_3d(
     elmat,
-    zscale = 12, # Lower zscale for performance
+    zscale = 8, # Lower zscale for performance
     solid = F,
     shadow = T,
     shadow_darkness = 1,
@@ -170,8 +170,8 @@ rayshader::render_highquality(
   rotate_env = 90,
   interactive = F,
   parallel = F, # Disabled parallel processing
-  width = w * 1, # Reduced render size
-  height = h * 1
+  width = w * 0.5, # Reduced render size
+  height = h * 0.5
 )
 
 # 11. PUT EVERYTHING TOGETHER
